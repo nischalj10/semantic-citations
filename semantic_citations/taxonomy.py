@@ -136,6 +136,18 @@ CITO_FUNCTION = {
 }
 
 
+def export() -> dict:
+    """Everything the Worker needs, so the prompt has one source of truth.
+    Regenerate worker/src/prompt.json with: python -m semantic_citations export-prompt"""
+    return {
+        "function": FUNCTION,
+        "stance": STANCE,
+        "own_evidence": OWN_EVIDENCE,
+        "cito_stance": {f"{stance}|{str(evidence).lower()}": prop for (stance, evidence), prop in CITO_STANCE.items()},
+        "cito_function": CITO_FUNCTION,
+    }
+
+
 def cito_property(function: str, stance: str, own_evidence: bool) -> str:
     if stance != "neutral":
         return CITO_STANCE[(stance, own_evidence)]

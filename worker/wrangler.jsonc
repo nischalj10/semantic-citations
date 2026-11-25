@@ -1,0 +1,30 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "semantic-citations",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-24",
+  // The public workers.dev URL is switched off for now. Set this to true to put the site back online.
+  "workers_dev": false,
+  "preview_urls": false,
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  },
+  "d1_databases": [
+    // Looked-up papers, labelled citations, the daily counter and the arXiv fetch queue.
+    // Tables are in schema.sql.
+    { "binding": "DB", "database_name": "semantic-citations", "database_id": "db9b2d41-6b6e-4b55-b815-17845de9a8ae" }
+  ],
+  "vars": {
+    // Citing papers listed per paper, most-cited first.
+    "MAX_CITING": "2000",
+    // Citations labelled per citing paper. With four option orders each, 8 keeps
+    // one request under the free plan's 50 outbound calls.
+    "MAX_CONTEXTS_PER_WORK": "8",
+    // New citing papers labelled per UTC day, across all visitors. Fetching from
+    // arXiv is free; this caps OpenAI spend at roughly $2 a day.
+    "DAILY_NEW_PAPERS_CAP": "1500"
+  }
+  // Secrets, set once with `npx wrangler secret put <NAME>`:
+  //   OPENAI_API_KEY, OPENALEX_API_KEY
+}
