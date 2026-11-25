@@ -8,10 +8,16 @@ Background: [Why is there no semantic ontology of sentiment in academic citation
 
 ## How it works
 
-1. **OpenAlex** resolves the paper and lists every work that cites it.
-2. For each citing work, OpenAlex's parsed full text (GROBID TEI XML) is downloaded and every in-text citation of the target is located, with the sentence before and after it.
+1. **OpenAlex** resolves the paper and lists every work that cites it. This costs a fraction of a cent per paper.
+2. The text of each citing work comes from **arXiv's HTML version**, which is free. arXiv renders papers with LaTeXML, so every in-text citation is a real link into the reference list. Each link to the target is located, with the sentence before and after it.
 3. Each citation context goes to the **OpenAI Decisions API** (`POST /v1/decisions`, model `gpt-6-luna`), which returns a probability for each predefined answer. There is no free text to parse.
 4. Results are written as JSON lines and as [CiTO](http://purl.org/spar/cito/) triples in Turtle.
+
+### Where the text comes from
+
+Two hosts serve the same HTML. `ar5iv.labs.arxiv.org` (arXiv Labs) is tried first and fetched once every 3 seconds. `arxiv.org/html` is the fallback, fetched once every 15 seconds because its robots.txt asks for that. The fallback matters because ar5iv keeps the version it converted, which can predate the citation being looked for. Every page is fetched once and then cached.
+
+On the 30 most-cited papers citing τ-bench, all 30 were on arXiv, 27 had a usable HTML version, and 26 of those listed τ-bench in their references.
 
 ## Run it
 
@@ -28,32 +34,34 @@ python -m unittest                                     # offline tests
 
 | File | Contents |
 |---|---|
-| `citing_works.json` | every citing work and whether its citations were found |
+| `citing_works.json` | every citing work, its arXiv ID, and whether its citations were found |
 | `contexts.jsonl` | one row per in-text citation: section, sentence, neighbours, co-citation count |
 | `predictions.jsonl` | labels, per-option probabilities, review flag, CiTO property |
 | `citations.ttl` | CiTO triples |
 | `gold.jsonl`, `report.md` | hand labels and the comparison against them (after `eval`) |
 
-Cost for the example paper (10 citing works, 20 contexts): $0.10 of OpenAlex's free $1/day for full text, paid once and then cached, and about $0.01 of OpenAI usage.
+Cost for the example paper (10 citing works, 14 contexts): under a cent of OpenAI usage, and effectively nothing for OpenAlex.
 
 ## Web app
 
 `worker/` is the same pipeline as a Cloudflare Worker with a single page in front of it.
 
-- `GET /api/paper?id=<arxiv link>` resolves the paper and lists the works citing it.
-- `GET /api/citations?target=<id>&work=<id>` reads one citing work and labels each citation in it.
+- `GET /api/paper?id=<arxiv link>` resolves the paper and returns the first 100 works citing it.
+- `GET /api/citing?target=<id>&page=<n>` returns further pages of citing works.
+- `GET /api/results?target=<id>` returns every citing work already read, in bulk.
+- `GET /api/citations?target=<id>&work=<id>&page=<n>` reads one citing work and labels each citation in it.
 
-The browser asks for the paper, then for each citing work in turn, so the page fills in as papers are read and no single request makes more than a few dozen outbound calls. Results are cached in Workers KV, so a paper is only paid for once.
+The browser reads the 30 most-cited citing papers on its own, then offers "Read 100 more" and "Read all remaining". Papers are read one at a time, because arXiv is fetched one page every few seconds; the queue is shared by all visitors. Results are stored in D1, so each citing paper is fetched and labelled once, for everyone.
 
-The prompt is not duplicated: `python -m semantic_citations export-prompt` writes `worker/src/prompt.json` from `taxonomy.py`. The context extractor is a port (`worker/src/tei.js`), and `node worker/test/parity.mjs` checks it against the Python output. On the test paper the live site returns the same 20 contexts and the same labels and confidences as the Python run.
+The prompt is not duplicated: `python -m semantic_citations export-prompt` writes `worker/src/prompt.json` from `taxonomy.py`. The context extractor exists twice, `worker/src/arxiv.js` and `semantic_citations/arxiv_html.py`, written as line-for-line ports of each other. `node worker/test/parity.mjs` checks they agree. On the test paper the live site returns the same 14 contexts, labels and confidences as the Python run.
 
-Because the site is public and spends real API budget, it has limits, set in `worker/wrangler.jsonc`:
+Limits, set in `worker/wrangler.jsonc`:
 
 | Setting | Default | Why |
 |---|---|---|
-| `MAX_CITING` | 30 | citing works read per paper, most-cited first |
+| `MAX_CITING` | 2000 | citing works listed per paper, most-cited first |
 | `MAX_CONTEXTS_PER_WORK` | 8 | keeps one request under the Workers free plan's 50 outbound calls |
-| `DAILY_FULLTEXT_CAP` | 80 | new full texts per day; each costs $0.01 of OpenAlex's free $1/day |
+| `DAILY_NEW_PAPERS_CAP` | 1500 | new citing papers labelled per day across all visitors; caps OpenAI spend at roughly $2 a day |
 
 The citations endpoint takes IDs, never text, and only reads works that OpenAlex lists as citing the target, so it cannot be used as an open proxy to the OpenAI key.
 
@@ -62,8 +70,9 @@ cd worker
 npm install
 npm test                       # offline unit tests
 npx wrangler login
-npx wrangler secret put OPENAI_API_KEY      # first deploy only
-npx wrangler secret put OPENALEX_API_KEY    # first deploy only
+npx wrangler d1 execute semantic-citations --remote --file schema.sql   # first deploy only
+npx wrangler secret put OPENAI_API_KEY                                  # first deploy only
+npx wrangler secret put OPENALEX_API_KEY                                # first deploy only
 npx wrangler deploy
 
 npm run build && node test/local.mjs        # or run it in Node, no Cloudflare login needed
@@ -136,31 +145,37 @@ Option descriptions are the "Meaning" columns above, in slightly longer form.
 
 **Confidence.** Each context is asked four times with the options rotated, and the probabilities are averaged. A context is flagged `needs_review` when either choice has confidence below 0.90.
 
-## First test: arXiv 2512.00601 (Clinical-R1)
+## Test: arXiv 2512.00601 (Clinical-R1)
 
-OpenAlex lists 10 citing works. All 10 had full text, and 20 in-text citations were found. All 20 were hand-labelled before the model was run (the labels are in an earlier commit than the predictions). Full results: [`data/arxiv-2512.00601/report.md`](data/arxiv-2512.00601/report.md).
+OpenAlex lists 10 citing works. Seven are on arXiv, and 14 in-text citations were found in them. Full results: [`data/arxiv-2512.00601/report.md`](data/arxiv-2512.00601/report.md).
 
 | Question | Agreement with hand labels |
 |---|---|
-| `function` | 14 of 20 |
-| `stance` | 16 of 20 |
-| `own_evidence` | 20 of 20 |
+| `function` | 11 of 14 |
+| `stance` | 13 of 14 |
+| `own_evidence` | 14 of 14 |
 
 What the test shows:
 
-- **High confidence was reliable.** At confidence 0.90 or above, the model matched the hand label 9 of 9 times on `function` and 9 of 9 on `stance`. Below 0.90 it matched about half the time.
-- **The review flag caught every disagreement,** at the price of flagging 14 of 20 contexts.
-- **The model is conservative.** Every miss was a retreat to `background` or `neutral`. It found 1 of the 5 citations hand-labelled as non-neutral, and never chose `supports`, `mixed` or `builds_on`.
-- **Option order matters.** The top `function` answer changed with option order in 5 of 20 contexts.
-- **Results were identical across two runs.**
+- **The model is conservative.** All four misses were a retreat to `background` or `neutral`.
+- **High confidence is a good sign, not a guarantee.** At confidence 0.90 or above, `stance` matched 8 of 8 and `function` 7 of 8. The one miss is a row of a feature-comparison table, which the hand label itself marks as borderline.
+- **Option order matters.** The top answer changed with option order in 3 of 14 contexts for `function` and 4 of 14 for `stance`.
 
-Read these numbers as a smoke test. There are 20 examples, one labeller, and that labeller also wrote the category definitions. The 0.90 threshold was chosen on this same sample.
+Read these numbers as a smoke test. There are 14 examples, one labeller, and that labeller also wrote the category definitions. The three citing papers that are not on arXiv held the only `supports`, `mixed` and `builds_on` examples, so those labels are untested here.
+
+### Earlier run on OpenAlex full text
+
+The first version read OpenAlex's parsed full text (GROBID), at $0.01 per citing paper. That reached all 10 citing works and 20 citations, with agreement of 14 of 20 on `function` and 16 of 20 on `stance`. It was replaced because of the cost at scale: a paper with 1,500 citing works would have cost about $15 to read. The hand labels for all 20 are still in `gold.jsonl`; the six from papers not on arXiv are reported as excluded. One label was changed for the new source, before the model was run on it: a citation that GROBID had flattened into a list of references is, in arXiv's HTML, visibly a row of a comparison table.
+
+The arXiv route is also more exact. GROBID did not link every citation, and recovering the unlinked ones by matching "Yao et al., 2024" in the text produced false matches when two references shared an author and year. arXiv's links come straight from the paper's LaTeX.
 
 ## Known limits
 
-- **Coverage is OpenAlex's.** Other indexes may list citing works OpenAlex has missed, and works without parsed full text are reported but not classified.
-- **GROBID does not link every citation.** Unlinked ones are recovered by matching the marker text (`[13]`, `Gu et al., 2025`), which can misfire when two references share an author and year. Those contexts carry a note.
-- **Tables arrive flattened.** A results row is recognisable; a feature-comparison grid is not.
+- **Only citing papers on arXiv are read**, and only those with an HTML version. For τ-bench that was 26 of the 30 most-cited citing papers.
+- **The arXiv version is what gets read.** A journal version can cite the target when the arXiv version does not, and the other way round.
+- **Coverage of the citing list is OpenAlex's.** Other indexes may list citing works OpenAlex has missed.
+- **Reading is slow by design.** About 3.5 seconds per citing paper, so 1,500 citing papers take roughly an hour and a half the first time.
+- **Sentence splitting is rule-based** and occasionally joins two sentences.
 - **A citation targets a claim, not a paper.** This labels the relation to the paper as a whole.
 - **Accuracy of the description is not checked.** One citing paper here describes the cited method in terms that do not match its abstract; that is outside all three questions.
 

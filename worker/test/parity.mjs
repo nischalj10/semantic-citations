@@ -2,13 +2,13 @@
 //
 //   node worker/test/parity.mjs
 //
-// Compares against data/<slug>/contexts.jsonl using the full texts in cache/tei/
+// Compares against data/<slug>/contexts.jsonl using the arXiv pages in cache/arxiv/
 // (downloaded by `python -m semantic_citations run`). Skips papers that are not cached.
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { extractContexts } from "../src/tei.js";
+import { extractContexts } from "../src/arxiv.js";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 const fields = ["match", "section", "sentence", "before", "after", "co_cited", "in_float", "notes"];
@@ -29,13 +29,26 @@ for (const slug of readdirSync(join(root, "data"))) {
     expected.get(row.citing_work).push(row);
   }
   for (const work of JSON.parse(readFileSync(join(dir, "citing_works.json"), "utf8"))) {
-    const path = join(root, "cache", "tei", `${work.openalex_id}.xml`);
-    if (!existsSync(path)) continue;
-    const xml = readFileSync(path, "utf8");
-    const t0 = performance.now();
-    const { contexts } = extractContexts(xml, target);
-    const ms = performance.now() - t0;
-    slowest = Math.max(slowest, ms);
+    if (!work.arxiv_id) continue;
+    // Same order as the pipeline: ar5iv, then arXiv's latest version if the target is not in the references.
+    let contexts = null;
+    let seen = false;
+    for (const source of ["ar5iv", "arxiv"]) {
+      const path = join(root, "cache", "arxiv", source, `${work.arxiv_id}.html`);
+      if (!existsSync(path)) continue;
+      const html = readFileSync(path, "utf8");
+      if (!html) continue;
+      seen = true;
+      const t0 = performance.now();
+      const found = extractContexts(html, target);
+      slowest = Math.max(slowest, performance.now() - t0);
+      if (found.bib) {
+        contexts = found.contexts;
+        break;
+      }
+    }
+    if (!seen) continue;
+    contexts = contexts || [];
     const want = expected.get(work.openalex_id) || [];
     compared++;
     let ok = contexts.length === want.length;
@@ -48,7 +61,7 @@ for (const slug of readdirSync(join(root, "data"))) {
       }
     }
     if (!ok) failures++;
-    console.log(`${ok ? "ok  " : "FAIL"} ${work.openalex_id}  ${contexts.length}/${want.length} contexts  ${(xml.length / 1024).toFixed(0)} KB  ${ms.toFixed(1)} ms`);
+    console.log(`${ok ? "ok  " : "FAIL"} ${work.openalex_id}  arXiv:${work.arxiv_id}  ${contexts.length}/${want.length} contexts`);
   }
 }
 

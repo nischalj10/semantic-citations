@@ -1,8 +1,8 @@
-"""OpenAlex: resolve a paper, list everything that cites it, fetch full text.
+"""OpenAlex: resolve a paper and list everything that cites it.
 
-Costs on a free key ($1/day): looking up one work is free, a page of citing
-works is $0.0001, and each full-text download is $0.01. Full text is cached
-on disk, so a paper is only ever paid for once.
+Looking up one work is free and a page of 200 citing works costs $0.0001, so
+this stays well inside the free $1/day. Full text comes from arXiv instead
+(see arxiv.py); OpenAlex charges $0.01 per paper for it.
 """
 
 from __future__ import annotations
@@ -13,14 +13,12 @@ import time
 
 import requests
 
-from .config import CACHE, require
+from .config import require
 
 API = "https://api.openalex.org"
-CONTENT = "https://content.openalex.org"
-FULLTEXT_COST_USD = 0.01
 
 
-def _get(url: str, params: dict | None = None, *, raw: bool = False):
+def _get(url: str, params: dict | None = None):
     params = {**(params or {}), "api_key": require("OPENALEX_API_KEY")}
     for attempt in range(4):
         r = requests.get(url, params=params, timeout=60)
@@ -30,7 +28,7 @@ def _get(url: str, params: dict | None = None, *, raw: bool = False):
         if r.status_code == 404:
             return None
         r.raise_for_status()
-        return r.content if raw else r.json()
+        return r.json()
 
 
 def short_id(work: dict | str) -> str:
@@ -78,30 +76,8 @@ def citing_works(work: dict) -> list[dict]:
     while cursor:
         page = _get(
             f"{API}/works",
-            {"filter": f"cites:{short_id(work)}", "per_page": 100, "cursor": cursor, "sort": "publication_date"},
+            {"filter": f"cites:{short_id(work)}", "per_page": 200, "cursor": cursor, "sort": "cited_by_count:desc"},
         )
         out.extend(page["results"])
         cursor = page["meta"].get("next_cursor") if page["results"] else None
     return out
-
-
-def has_fulltext(work: dict) -> bool:
-    return bool((work.get("has_content") or {}).get("grobid_xml"))
-
-
-def fulltext_tei(work: dict) -> bytes | None:
-    """GROBID TEI XML for a work, from cache if we already paid for it."""
-    path = CACHE / "tei" / f"{short_id(work)}.xml"
-    if path.exists():
-        return path.read_bytes()
-    if not has_fulltext(work):
-        return None
-    xml = _get(f"{CONTENT}/works/{short_id(work)}.grobid-xml", raw=True)
-    if xml:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(xml)
-    return xml
-
-
-def uncached_fulltext_count(works: list[dict]) -> int:
-    return sum(1 for w in works if has_fulltext(w) and not (CACHE / "tei" / f"{short_id(w)}.xml").exists())

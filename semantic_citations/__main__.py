@@ -12,13 +12,13 @@ import json
 import re
 from pathlib import Path
 
-from . import openalex
+from . import arxiv, openalex
 from .config import DATA
 from .decisions import decide
 from .evaluate import write_report
 from .config import ROOT
 from .taxonomy import cito_property, export, render_input
-from .tei import Target, extract_contexts
+from .arxiv_html import Target, extract_contexts
 
 
 def slug_for(work: dict) -> str:
@@ -34,7 +34,22 @@ def read_jsonl(path: Path) -> list[dict]:
     return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
 
 
-def collect(identifier: str, max_fulltext_usd: float) -> tuple[Path, dict, list[dict]]:
+def read_citing_paper(arxiv_id: str, target: Target) -> tuple[str, list]:
+    """Find the target's citations in one citing paper. ar5iv first, then arXiv's
+    latest version, because ar5iv's copy can predate the citation."""
+    saw_html = False
+    for source in ("ar5iv", "arxiv"):
+        html = arxiv.fetch_html(arxiv_id, source)
+        if html is None:
+            continue
+        saw_html = True
+        bib, found = extract_contexts(html, target)
+        if bib:
+            return ("ok" if found else "in reference list but no in-text citation found"), found
+    return ("not in the reference list of the arXiv version" if saw_html else "no HTML version on arXiv"), []
+
+
+def collect(identifier: str) -> tuple[Path, dict, list[dict]]:
     """Steps 1-3: resolve the paper, list citing works, extract citation contexts."""
     work = openalex.resolve(identifier)
     out = DATA / slug_for(work)
@@ -49,30 +64,23 @@ def collect(identifier: str, max_fulltext_usd: float) -> tuple[Path, dict, list[
     print(f"Cited paper: {work['title']}")
 
     citing = openalex.citing_works(work)
-    to_buy = openalex.uncached_fulltext_count(citing)
-    cost = to_buy * openalex.FULLTEXT_COST_USD
-    print(f"{len(citing)} citing works; {to_buy} full texts to download (${cost:.2f} of OpenAlex budget)")
-    if cost > max_fulltext_usd:
-        raise SystemExit(f"That exceeds --max-fulltext-usd {max_fulltext_usd}. Raise the limit to proceed.")
+    ids = {openalex.short_id(w): arxiv.arxiv_id_of(w) for w in citing}
+    to_fetch = sum(1 for a in ids.values() if a and not arxiv.is_cached(a))
+    print(f"{len(citing)} citing works, {sum(1 for a in ids.values() if a)} on arXiv" + (f"; {to_fetch} pages to fetch, about {to_fetch * 3 // 60 + 1} min" if to_fetch else ""))
 
     contexts, summary = [], []
     for w in citing:
         wid = openalex.short_id(w)
-        row = {"openalex_id": wid, "title": w["title"], "doi": w.get("doi"), "published": w.get("publication_date")}
-        tei = openalex.fulltext_tei(w)
-        if tei is None:
-            row["status"] = "no full text available from OpenAlex"
+        row = {"openalex_id": wid, "arxiv_id": ids[wid], "title": w["title"], "doi": w.get("doi"), "published": w.get("publication_date")}
+        if not ids[wid]:
+            row["status"], found = "not on arXiv", []
         else:
-            bib, found = extract_contexts(tei, target)
-            if bib is None:
-                row["status"] = "target not found in reference list"
-            else:
-                row["status"] = "ok" if found else "in reference list but no in-text citation found"
-            for n, ctx in enumerate(found, 1):
-                contexts.append({"id": f"{wid}#{n}", "citing_work": wid, "citing_title": w["title"], **ctx.to_dict()})
-            row["contexts"] = len(found)
+            row["status"], found = read_citing_paper(ids[wid], target)
+        for n, ctx in enumerate(found, 1):
+            contexts.append({"id": f"{wid}#{n}", "citing_work": wid, "citing_title": w["title"], **ctx.to_dict()})
+        row["contexts"] = len(found)
         summary.append(row)
-        print(f"  {wid}  {row.get('contexts', 0)} context(s)  {row['status']:<45.45}  {w['title'][:60]}")
+        print(f"  {wid}  {row['contexts']} context(s)  {row['status']:<48.48}  {w['title'][:56]}")
 
     (out / "cited.json").write_text(json.dumps({k: v for k, v in cited.items() if k != "abstract"}, indent=2) + "\n")
     (out / "citing_works.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")
@@ -130,7 +138,6 @@ def main() -> None:
     run = sub.add_parser("run", help="collect citations of a paper and classify them")
     run.add_argument("paper", help="arXiv URL or ID, DOI, or OpenAlex work ID")
     run.add_argument("--rotations", type=int, default=4, help="option orders to average over (default 4)")
-    run.add_argument("--max-fulltext-usd", type=float, default=0.50, help="OpenAlex full-text spend allowed for this run")
     run.add_argument("--review-below", type=float, default=0.90, help="flag a context when either choice is less confident than this")
     run.add_argument("--no-classify", action="store_true", help="stop after extracting contexts (e.g. to hand-label first)")
 
@@ -146,7 +153,7 @@ def main() -> None:
         path.write_text(json.dumps(export(), indent=2) + "\n")
         print(f"Wrote {path}")
     elif args.command == "run":
-        out, cited, contexts = collect(args.paper, args.max_fulltext_usd)
+        out, cited, contexts = collect(args.paper)
         print(f"{len(contexts)} citation contexts -> {out / 'contexts.jsonl'}")
         if args.no_classify:
             return

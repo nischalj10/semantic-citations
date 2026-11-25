@@ -1,10 +1,20 @@
-// OpenAlex lookups and OpenAI Decisions API calls.
-// Mirrors semantic_citations/openalex.py, decisions.py and taxonomy.py.
+// OpenAlex lookups, arXiv HTML fetches and OpenAI Decisions API calls.
+// Mirrors semantic_citations/openalex.py, arxiv.py, decisions.py and taxonomy.py.
 
 import PROMPT from "./prompt.json";
 
 const OPENALEX = "https://api.openalex.org";
-const OPENALEX_CONTENT = "https://content.openalex.org";
+export const PAGE_SIZE = 100; // citing works per OpenAlex request
+
+// Two hosts serve the same LaTeXML HTML. ar5iv (arXiv Labs) sets no crawl delay;
+// arxiv.org's robots.txt asks for 15 seconds between requests. ar5iv goes first
+// and arxiv.org is the fallback, because ar5iv keeps the version it converted
+// and that can predate the citation we are looking for.
+export const SOURCES = {
+  ar5iv: { url: "https://ar5iv.labs.arxiv.org/html/", gapMs: 3000 },
+  arxiv: { url: "https://arxiv.org/html/", gapMs: 15000 },
+};
+const USER_AGENT = "semantic-citations (+https://github.com/nischalj10/semantic-citations)";
 const DECISIONS_URL = "https://api.openai.com/v1/decisions";
 export const MODEL = "gpt-6-luna";
 export const ROTATIONS = 4;
@@ -60,19 +70,45 @@ async function openalex(env, url) {
   return res;
 }
 
-/** Resolve a paper and list the works that cite it, most-cited first. */
-export async function lookupPaper(env, key, maxCiting) {
+/** The arXiv ID of an OpenAlex work, from its DOI or any of its locations. */
+function arxivIdOf(work) {
+  const places = [work.doi || ""];
+  for (const loc of work.locations || []) places.push(loc.landing_page_url || "", loc.pdf_url || "");
+  for (const place of places) {
+    const m = /arxiv\.org\/(?:abs|pdf|html)\/(\d{4}\.\d{4,5})/i.exec(place) || /10\.48550\/arxiv\.(\d{4}\.\d{4,5})/i.exec(place);
+    if (m) return m[1];
+  }
+  return null;
+}
+
+/** One page of the works citing `targetId`, most-cited first. Costs $0.0001. */
+export async function listCiting(env, targetId, page) {
+  const res = await openalex(
+    env,
+    `${OPENALEX}/works?filter=cites:${targetId}&per_page=${PAGE_SIZE}&page=${page}&sort=cited_by_count:desc` +
+      "&select=id,doi,title,publication_date,cited_by_count,locations",
+  );
+  const body = await res.json();
+  return {
+    total: body.meta.count,
+    works: body.results.map((w) => ({
+      id: shortId(w),
+      title: plain(w.title) || "Untitled work",
+      doi: w.doi || null,
+      published: w.publication_date || null,
+      venue: (w.locations || []).map((l) => l.source && l.source.display_name).find(Boolean) || null,
+      cited_by_count: w.cited_by_count || 0,
+      arxiv_id: arxivIdOf(w),
+    })),
+  };
+}
+
+/** Resolve a paper. Free. */
+export async function lookupPaper(env, key) {
   const res = await openalex(env, `${OPENALEX}/works/${key}?select=id,doi,title,publication_year,cited_by_count,ids,abstract_inverted_index`);
   if (!res) throw new UserError(404, "OpenAlex has no record of that paper. Very recent preprints can take a few weeks to appear.");
   const work = await res.json();
   const arxiv = /(\d{4}\.\d{4,5})/.exec(JSON.stringify(work.ids || {}) + (work.doi || ""));
-
-  const list = await openalex(
-    env,
-    `${OPENALEX}/works?filter=cites:${shortId(work)}&per_page=${maxCiting}&sort=cited_by_count:desc` +
-      "&select=id,doi,title,publication_date,cited_by_count,has_content,primary_location",
-  );
-  const page = await list.json();
   return {
     id: shortId(work),
     title: plain(work.title),
@@ -80,23 +116,23 @@ export async function lookupPaper(env, key, maxCiting) {
     arxiv_id: arxiv ? arxiv[1] : null,
     year: work.publication_year || null,
     abstract: abstractOf(work),
-    total_citing: page.meta.count,
-    citing: page.results.map((w) => ({
-      id: shortId(w),
-      title: plain(w.title) || "Untitled work",
-      doi: w.doi || null,
-      published: w.publication_date || null,
-      venue: w.primary_location?.source?.display_name || null,
-      cited_by_count: w.cited_by_count || 0,
-      has_fulltext: Boolean(w.has_content?.grobid_xml),
-    })),
   };
 }
 
-/** GROBID TEI for a work, or null when OpenAlex has none. Costs $0.01 of OpenAlex budget. */
-export async function fetchFulltext(env, workId) {
-  const res = await openalex(env, `${OPENALEX_CONTENT}/works/${workId}.grobid-xml`);
-  return res ? res.text() : null;
+/**
+ * A paper's HTML from one source, or null when that source has nothing usable:
+ * a missing paper redirects (ar5iv) or 404s (arxiv.org), and a failed conversion
+ * is a page with no reference list.
+ */
+export async function fetchPaperHtml(source, arxivId) {
+  const res = await fetch(SOURCES[source].url + arxivId, { headers: { "User-Agent": USER_AGENT }, redirect: "manual" });
+  if (res.status === 429 || res.status === 503) {
+    const wait = Math.min(Math.max(Number(res.headers.get("retry-after")) || 30, 5), 120);
+    throw new UserError(429, "arXiv asked this site to slow down.", { retry_after: wait, source });
+  }
+  if (res.status !== 200) return null;
+  const html = await res.text();
+  return html.includes("ltx_bibitem") ? html : null;
 }
 
 const rotate = (items, k) => items.slice(k % items.length).concat(items.slice(0, k % items.length));

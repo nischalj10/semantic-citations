@@ -31,6 +31,9 @@ def write_report(out: Path, contexts: list[dict], predictions: list[dict], gold:
     lines.append(f"{len(ids)} citation contexts from {len({ctx[i]['citing_work'] for i in ids})} citing papers.")
     if missing:
         lines.append(f"**{len(missing)} contexts have no hand label and are excluded:** {', '.join(missing)}")
+    orphans = [g["id"] for g in gold if g["id"] not in ctx]
+    if orphans:
+        lines.append(f"{len(orphans)} hand labels are for citations that were not found this run (their papers are not on arXiv) and are excluded: {', '.join(orphans)}")
     lines.append("")
 
     # --- agreement ----------------------------------------------------------

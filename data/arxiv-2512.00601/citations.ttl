@@ -1,31 +1,22 @@
 @prefix cito: <http://purl.org/spar/cito/> .
 
-# Trustworthy Medical LLMs via Bayesian Belief Updating
-<https://doi.org/10.18653/2026.emnlp-main.1678> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
-
-# Unlocking Latent Medical Reasoning in LLMs via Inference-Time Representation and Prefix Interventions
-<https://doi.org/10.18653/2026.findings-emnlp.727> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
-
 # RadAgent: A tool-using AI agent for stepwise interpretation of chest computed tomography
 <https://doi.org/10.48550/arxiv.2604.15231> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .
 
-# Thinking Like a Clinician: A Cognitive AI Agent for Clinical Diagnosis via Panoramic Profiling and Adversarial Debate
-<https://doi.org/10.48550/arxiv.2604.23605> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
+# MedGuideX: Internalizing Decision Logic from Executable Guidelines into Large Language Models for Clinical Reasoning
+<https://doi.org/10.48550/arxiv.2605.26567> cito:citesAsRelated <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
+<https://doi.org/10.48550/arxiv.2605.26567> cito:discusses <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
+<https://doi.org/10.48550/arxiv.2605.26567> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .
 
 # CLR-voyance: Reinforcing Open-Ended Reasoning for Inpatient Clinical Decision Support with Outcome-Aware Rubrics
 <https://doi.org/10.48550/arxiv.2605.09584> cito:critiques <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
-<https://doi.org/10.48550/arxiv.2605.09584> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
-
-# MedGuideX: Internalizing Decision Logic from Executable Guidelines into Large Language Models for Clinical Reasoning
-<https://doi.org/10.48550/arxiv.2605.26567> cito:citesAsRelated <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
-<https://doi.org/10.48550/arxiv.2605.26567> cito:discusses <https://doi.org/10.48550/arxiv.2512.00601> .
-<https://doi.org/10.48550/arxiv.2605.26567> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
-
-# Auxiliary diagnosis and risk assessment of cardiovascular diseases based on BERT and Qwen: a dual large language model framework
-<https://doi.org/10.54254/2977-3903/2026.34223> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
+<https://doi.org/10.48550/arxiv.2605.09584> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .
 
 # The Path to Self-Evolving Clinical Systems: Scaling Medical Agents from Assistance to Autonomy
 <https://doi.org/10.48550/arxiv.2607.11175> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
+
+# Thinking Like a Clinician: A Cognitive AI Agent for Clinical Diagnosis via Panoramic Profiling and Adversarial Debate
+<https://doi.org/10.48550/arxiv.2604.23605> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .  # low confidence, review before use
 
 # Reinforcement Learning over Patient Trajectories for Clinical Reasoning in EHR Foundation Models
 <https://doi.org/10.48550/arxiv.2609.12277> cito:obtainsBackgroundFrom <https://doi.org/10.48550/arxiv.2512.00601> .

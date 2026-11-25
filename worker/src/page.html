@@ -97,6 +97,12 @@
   .tick.waiting { border-color: var(--rule); background: var(--rule); animation: wait 1.2s ease-in-out infinite alternate; cursor: default; }
   .tick.empty { border-color: var(--rule); background: transparent; border-style: dashed; cursor: default; }
   .tick.off { opacity: 0.16; }
+  .strip.small { gap: 3px 6px; min-height: 22px; }
+  .strip.small .group { gap: 2px; }
+  .strip.small .tick { width: 6px; height: 22px; border-width: 1.5px; border-radius: 1px; }
+  .strip.tiny { gap: 2px 3px; min-height: 14px; }
+  .strip.tiny .group { gap: 1px; }
+  .strip.tiny .tick { width: 3px; height: 14px; border-width: 1px; border-radius: 0; }
   @keyframes wait { from { opacity: 0.35; } to { opacity: 1; } }
   .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
   .filters button { background: none; border: 1.5px solid var(--rule); border-radius: 999px; padding: 5px 13px; font-size: 14.5px; display: inline-flex; align-items: center; gap: 7px; }
@@ -111,6 +117,13 @@
   .work .meta { font-size: 14px; color: var(--pencil); margin: 3px 0 12px; }
   .work .note { font-size: 15px; color: var(--pencil); margin: 0 0 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
   .work .note button { background: none; border: 0; padding: 0; text-decoration: underline; color: var(--ink); }
+
+  .more { border-top: 1px solid var(--rule); margin-top: 10px; padding: 20px 0 22px; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; }
+  .more:empty { display: none; }
+  .more p { flex: 0 0 100%; margin: 0 0 4px; color: var(--pencil); }
+  .more button { background: var(--page); border: 1.5px solid var(--ink); border-radius: 4px; padding: 9px 16px; font-weight: 600; font-size: 15px; }
+  .more button:first-of-type { background: var(--ink); color: #fff; }
+  .more button:disabled { opacity: 0.55; cursor: progress; }
 
   footer { margin-top: 56px; font-size: 14.5px; color: var(--pencil); max-width: 72ch; }
   footer p { margin: 0 0 10px; }
@@ -166,12 +179,13 @@
       <div class="filters" id="filters" role="group" aria-label="Show citations by attitude"></div>
       <p class="key" id="key">Each bar is one citation, grouped by the paper it appears in. A hollow bar means the model was less than 90% confident.</p>
       <div id="works"></div>
+      <div class="more" id="more"></div>
     </section>
   </main>
 
   <footer>
-    <p>Citing papers and their full text come from OpenAlex. Labels come from OpenAI's Decisions API, which returns a probability for each predefined answer. The site reads up to <span id="cap">30</span> citing papers per paper, most-cited first, and can only read those with open full text.</p>
-    <p>The labels are a model's reading, and it leans cautious. In a hand-checked test of 20 citations it matched a human on 14 for the reason and 16 for the attitude, and every miss was a retreat to “background” or “neutral”. Answers above 90% confidence matched every time.</p>
+    <p>The list of citing papers comes from OpenAlex. Their text comes from the HTML versions arXiv publishes, so only citing papers that are on arXiv can be read, and what is read is the arXiv version. Papers are read most-cited first, and each is read once and then kept for every visitor. Labels come from OpenAI's Decisions API, which returns a probability for each predefined answer.</p>
+    <p>The labels are a model's reading, and it leans cautious. In a hand-checked test of 14 citations it matched a human on 11 for the reason and 13 for the attitude. Most misses were a retreat to “background” or “neutral”.</p>
     <p><a href="https://github.com/nischalj10/semantic-citations">Code, prompt and test results on GitHub</a></p>
   </footer>
 </div>
@@ -180,40 +194,53 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-  const marked = (s) => esc(s).replaceAll("&lt;TARGET&gt;", "<mark>").replaceAll("&lt;/TARGET&gt;", "</mark>");
+  // Maths arrives as LaTeX source; show the commonest symbols as readers expect them.
+  const SYMBOLS = { tau: "τ", alpha: "α", beta: "β", gamma: "γ", delta: "δ", epsilon: "ε", lambda: "λ", mu: "μ", pi: "π", sigma: "σ", theta: "θ", pm: "±", times: "×", rightarrow: "→", leq: "≤", geq: "≥", approx: "≈", "%": "%" };
+  const pretty = (s) => String(s ?? "").replace(/\\([A-Za-z]+|%)(?![A-Za-z])/g, (m, name) => SYMBOLS[name] ?? m).replace(/\{(±)\}/g, "$1");
+  const marked = (s) => esc(pretty(s)).replaceAll("&lt;TARGET&gt;", "<mark>").replaceAll("&lt;/TARGET&gt;", "</mark>");
   const pct = (x) => Math.round(x * 100) + "%";
+  const num = (n) => n.toLocaleString("en");
   const tidy = (s) => String(s ?? "").replace(/\$([^$\s]{1,40})\$/g, "$1"); // "$τ$-bench" -> "τ-bench"
   const arxivMonth = (id) => {
     const m = /^(\d{2})(\d{2})\./.exec(id || "");
     return m ? new Date(Date.UTC(2000 + Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" }) : "";
   };
-  const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+  const plural = (n, one, many) => num(n) + " " + (n === 1 ? one : many);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
   const STANCE = { supports: "Supportive", critiques: "Critical", mixed: "Mixed", neutral: "Neutral" };
   const FUNCTION = { background: "Cited as background", builds_on: "Builds on it", compares: "Compares against it", motivates: "Cited as motivation" };
   const OPTION = { background: "Background", builds_on: "Builds on it", compares: "Compares", motivates: "Motivation", supports: "Supportive", critiques: "Critical", mixed: "Mixed", neutral: "Neutral" };
   const EMPTY = {
-    no_fulltext: "No open full text, so its citations could not be read.",
-    not_in_references: "The paper was not found in this work's reference list.",
+    not_on_arxiv: "Not on arXiv, so it could not be read.",
+    no_html: "arXiv has no HTML version of this paper, so it could not be read.",
+    not_in_references: "The arXiv version of this paper does not list it in its references.",
     no_intext_citation: "Listed in the references, but no sentence citing it was found.",
   };
+  const FIRST_BATCH = 30; // citing papers read without being asked
+  const SECONDS_PER_PAPER = 4; // arXiv is fetched one paper every three seconds
 
   let run = 0; // increments on every lookup so stale responses are ignored
   let paper = null;
-  let results = new Map(); // work id -> { state: "waiting" | "done" | "failed", data, error }
+  let works = []; // citing works listed so far, most-cited first
+  let pagesLoaded = 0;
+  let shown = 0; // works[0..shown) are on the page
+  let results = new Map(); // work id -> { state: "waiting" | "done" | "failed", data, error, note }
   let filter = "all";
+  let reading = false;
+  let stop = false;
 
   async function api(path, tries = 3) {
     const res = await fetch(path, { headers: { Accept: "application/json" } });
     let body = null;
     try { body = await res.json(); } catch { /* not JSON */ }
     if (res.status === 409 && tries > 1) {
-      await new Promise((r) => setTimeout(r, 1200));
+      await sleep(1200);
       return api(path, tries - 1);
     }
     if (!res.ok) {
       const err = new Error((body && body.error) || "The site could not be reached. Check your connection and try again.");
-      err.retryAfter = body && body.retry_after;
+      err.body = body || {};
       throw err;
     }
     return body;
@@ -224,15 +251,8 @@
     const d = new Date(iso + "T00:00:00Z");
     return isNaN(d) ? "" : d.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
   };
-
-  const citations = () => {
-    const out = [];
-    for (const w of paper.citing) {
-      const r = results.get(w.id);
-      if (r && r.state === "done") r.data.contexts.forEach((c, i) => out.push({ work: w, c, id: `c-${w.id}-${i}` }));
-    }
-    return out;
-  };
+  const stateOf = (w) => (results.get(w.id) || {}).state;
+  const contextsOf = (w) => { const r = results.get(w.id); return r && r.state === "done" ? r.data.contexts : []; };
   const visible = (c) => filter === "all" || (filter === "unsure" ? c.needs_review : c.stance.label === filter);
 
   function citationHtml(c, id) {
@@ -241,8 +261,8 @@
     const where = c.match === "name" ? "Mentioned by name" : c.section ? `From “${esc(c.section)}”` : "";
     return `<article class="citation" id="${id}" tabindex="-1" data-stance="${esc(c.stance.label)}">
       <div>
-        ${where ? `<p class="where">${where}</p>` : ""}
-        <p class="passage">${c.before ? `<span class="around">${esc(c.before)}</span> ` : ""}${marked(c.sentence)}${c.after ? ` <span class="around">${esc(c.after)}</span>` : ""}</p>
+        ${where ? `<p class="where">${where}${c.in_float ? ", in a table or caption" : ""}</p>` : ""}
+        <p class="passage">${c.before ? `<span class="around">${esc(pretty(c.before))}</span> ` : ""}${marked(c.sentence)}${c.after ? ` <span class="around">${esc(pretty(c.after))}</span>` : ""}</p>
       </div>
       <div class="verdict">
         <p class="stance">${esc(STANCE[c.stance.label] || c.stance.label)}</p>
@@ -262,11 +282,13 @@
 
   function renderWork(w) {
     const el = $("w-" + w.id);
+    if (!el) return;
     const r = results.get(w.id);
     const title = w.doi ? `<a href="${esc(w.doi)}" rel="noopener">${esc(tidy(w.title))}</a>` : esc(tidy(w.title));
     const meta = [w.venue, when(w.published)].filter(Boolean).map(esc).join(", ");
     let body;
-    if (!r || r.state === "waiting") body = `<p class="note">${esc((r && r.note) || "Reading…")}</p>`;
+    if (!r) body = '<p class="note">Not read yet.</p>';
+    else if (r.state === "waiting") body = `<p class="note">${esc(r.note || "Reading…")}</p>`;
     else if (r.state === "failed") body = `<p class="note">${esc(r.error)} <button type="button" data-retry="${esc(w.id)}">Try this paper again</button></p>`;
     else if (!r.data.contexts.length) body = `<p class="note">${esc(EMPTY[r.data.status] || "No citations were found.")}</p>`;
     else {
@@ -276,68 +298,153 @@
     el.innerHTML = `<h3>${title}</h3>${meta ? `<p class="meta">${meta}</p>` : ""}${body}`;
   }
 
+  /** Put works[0..upTo) on the page. */
+  function show(upTo) {
+    const box = $("works");
+    for (; shown < Math.min(upTo, works.length); shown++) {
+      const w = works[shown];
+      const el = document.createElement("section");
+      el.className = "work";
+      el.id = "w-" + w.id;
+      box.appendChild(el);
+      renderWork(w);
+    }
+  }
+
   function renderSummary() {
-    const all = citations();
-    const done = paper.citing.filter((w) => (results.get(w.id) || {}).state !== "waiting").length;
-    const reading = done < paper.citing.length;
+    const listed = works.slice(0, shown);
+    const all = [];
+    for (const w of listed) contextsOf(w).forEach((c, i) => all.push({ w, c, id: `c-${w.id}-${i}` }));
+    const covered = listed.filter((w) => stateOf(w) === "done");
+    const read = covered.filter((w) => results.get(w.id).data.contexts.length || results.get(w.id).data.status === "no_intext_citation").length;
+    const unreadable = covered.length - read;
+    const left = paper.listed - covered.length;
 
     let status = arxivMonth(paper.arxiv_id) ? `On arXiv since ${arxivMonth(paper.arxiv_id)}. ` : paper.year ? `Published ${paper.year}. ` : "";
     if (!paper.total_citing) status += "OpenAlex doesn't list any papers citing this one yet.";
     else {
-      status += paper.total_citing > paper.shown
-        ? `Cited by ${paper.total_citing.toLocaleString("en")} papers in OpenAlex; reading the ${paper.shown} most cited. `
-        : `Cited by ${plural(paper.total_citing, "paper", "papers")} in OpenAlex. `;
-      status += reading ? `Read ${done} of ${paper.citing.length} so far.` : `Found ${plural(all.length, "citation", "citations")} in them.`;
+      status += `${plural(paper.total_citing, "paper cites", "papers cite")} it, according to OpenAlex. `;
+      status += `Read ${num(read)} of them so far and found ${plural(all.length, "citation", "citations")}.`;
+      if (unreadable) status += ` ${num(unreadable)} could not be read; each says why below.`;
+      if (paper.total_citing > paper.listed) status += ` Only the ${num(paper.listed)} most-cited citing papers are listed here.`;
     }
     $("status").textContent = status;
 
-    $("strip").innerHTML = paper.citing.map((w) => {
+    const strip = $("strip");
+    strip.className = "strip" + (all.length > 700 ? " tiny" : all.length > 150 ? " small" : "");
+    strip.innerHTML = listed.map((w) => {
       const r = results.get(w.id);
       let ticks;
-      if (!r || r.state === "waiting") ticks = '<span class="tick waiting"></span>';
-      else if (r.state === "failed" || !r.data.contexts.length) ticks = '<span class="tick empty"></span>';
+      if (!r) return "";
+      if (r.state === "waiting") ticks = '<span class="tick waiting"></span>';
+      else if (r.state === "failed" || !r.data.contexts.length) ticks = all.length > 150 ? "" : '<span class="tick empty"></span>';
       else ticks = r.data.contexts.map((c, i) => `<button type="button" class="tick${c.needs_review ? " unsure" : ""}${visible(c) ? "" : " off"}" data-stance="${esc(c.stance.label)}" data-go="c-${w.id}-${i}" aria-label="${esc(STANCE[c.stance.label])} citation in ${esc(tidy(w.title))}"></button>`).join("");
-      return `<span class="group" title="${esc(tidy(w.title))}">${ticks}</span>`;
+      return ticks ? `<span class="group" title="${esc(tidy(w.title))}">${ticks}</span>` : "";
     }).join("");
 
     const count = (f) => all.filter(({ c }) => (f === "unsure" ? c.needs_review : c.stance.label === f)).length;
-    const buttons = [["all", `All ${all.length}`, ""]];
-    for (const s of ["supports", "critiques", "mixed", "neutral"]) buttons.push([s, `${STANCE[s]} ${count(s)}`, `<span class="dot" data-stance="${s}"></span>`]);
-    buttons.push(["unsure", `Low confidence ${count("unsure")}`, '<span class="dot unsure"></span>']);
+    const buttons = [["all", `All ${num(all.length)}`, ""]];
+    for (const s of ["supports", "critiques", "mixed", "neutral"]) buttons.push([s, `${STANCE[s]} ${num(count(s))}`, `<span class="dot" data-stance="${s}"></span>`]);
+    buttons.push(["unsure", `Low confidence ${num(count("unsure"))}`, '<span class="dot unsure"></span>']);
     $("filters").innerHTML = all.length ? buttons.map(([f, label, dot]) => `<button type="button" data-filter="${f}" aria-pressed="${filter === f}">${dot}${label}</button>`).join("") : "";
     $("key").hidden = !all.length;
 
     for (const { c, id } of all) { const el = $(id); if (el) el.hidden = !visible(c); }
-    for (const w of paper.citing) {
-      const r = results.get(w.id);
-      const has = r && r.state === "done" && r.data.contexts.some(visible);
-      $("w-" + w.id).hidden = filter !== "all" && !has;
+    for (const w of listed) {
+      const el = $("w-" + w.id);
+      if (el) el.hidden = filter !== "all" && !contextsOf(w).some(visible);
+    }
+
+    // What to do next.
+    const more = $("more");
+    if (reading) {
+      more.innerHTML = `<p>Reading one paper every few seconds, which is as fast as arXiv allows. ${num(left)} of ${num(paper.listed)} still to go.</p><button type="button" data-more="stop">Stop reading</button>`;
+    } else if (left > 0) {
+      const minutes = Math.max(1, Math.round((left * SECONDS_PER_PAPER) / 60));
+      const next = Math.min(100, left);
+      more.innerHTML = `<p>${num(covered.length)} of ${num(paper.listed)} citing papers covered. The rest only take time: arXiv is fetched one paper every few seconds.</p>
+        <button type="button" data-more="${next}">Read ${num(next)} more</button>
+        ${left > next ? `<button type="button" data-more="all">Read all ${num(left)} remaining, about ${num(minutes)} min</button>` : ""}`;
+    } else {
+      more.innerHTML = paper.total_citing ? `<p>Every listed citing paper has been covered.</p>` : "";
     }
   }
 
+  async function loadNextPage(mine) {
+    if (pagesLoaded >= paper.pages) return false;
+    const next = await api(`/api/citing?target=${paper.id}&page=${pagesLoaded + 1}`);
+    if (mine !== run) return false;
+    pagesLoaded += 1;
+    next.citing.forEach((w) => { w.page = pagesLoaded; });
+    works = works.concat(next.citing);
+    return next.citing.length > 0;
+  }
+
   async function readWork(w, mine) {
+    if (!w.arxiv_id) {
+      results.set(w.id, { state: "done", data: { status: "not_on_arxiv", contexts: [] } });
+      renderWork(w);
+      return false;
+    }
+    let extra = "";
+    results.set(w.id, { state: "waiting" });
+    renderWork(w);
+    renderSummary();
     for (let attempt = 0; mine === run; attempt++) {
       try {
-        const data = await api(`/api/citations?target=${paper.id}&work=${w.id}`);
-        if (mine !== run) return;
+        const data = await api(`/api/citations?target=${paper.id}&work=${w.id}&page=${w.page}${extra}`);
+        if (mine !== run) return false;
         results.set(w.id, { state: "done", data });
         break;
       } catch (err) {
-        if (mine !== run) return;
-        if (err.retryAfter && attempt < 30) {
-          // A short-term limit upstream: wait as long as it asks, then try again.
-          results.set(w.id, { state: "waiting", note: `${err.message} Trying again in ${err.retryAfter} seconds.` });
+        if (mine !== run) return false;
+        const wait = err.body && err.body.retry_after;
+        if (wait && attempt < 40) {
+          // A short-term limit upstream: wait as long as it asks, then pick up where it left off.
+          extra = (err.body.source === "arxiv" ? "&source=arxiv" : "") + (err.body.saw_html ? "&saw=1" : "");
+          results.set(w.id, { state: "waiting", note: `${err.message} Trying again in ${wait} seconds.` });
           renderWork(w);
-          await new Promise((r) => setTimeout(r, err.retryAfter * 1000));
+          await sleep(wait * 1000);
           continue;
         }
         results.set(w.id, { state: "failed", error: err.message });
+        stop = true; // a hard limit or an outage: stop here and let the reader decide
         break;
       }
     }
-    if (mine !== run) return;
+    if (mine !== run) return false;
     renderWork(w);
-    renderSummary();
+    return true;
+  }
+
+  /** Read up to `count` more citing papers, in most-cited order. */
+  async function readMore(count, mine) {
+    if (reading) return;
+    reading = true;
+    stop = false;
+    $("go").disabled = true;
+    $("go").textContent = "Reading…";
+    try {
+      let done = 0;
+      for (let i = 0; done < count && !stop && mine === run; i++) {
+        if (i >= works.length && !(await loadNextPage(mine))) break;
+        if (i >= paper.listed) break;
+        const w = works[i];
+        show(i + 1);
+        if (stateOf(w) === "done") continue;
+        if (await readWork(w, mine)) done += 1;
+        renderSummary();
+      }
+    } catch (err) {
+      if (mine === run) { $("problem").textContent = err.message; $("problem").hidden = false; }
+    } finally {
+      if (mine === run) {
+        reading = false;
+        $("go").disabled = false;
+        $("go").textContent = "Read the citations";
+        renderSummary();
+      }
+    }
   }
 
   async function lookup(link) {
@@ -346,34 +453,49 @@
     $("problem").hidden = true;
     go.disabled = true;
     go.textContent = "Looking it up…";
+    reading = false;
     try {
       const found = await api("/api/paper?id=" + encodeURIComponent(link));
       if (mine !== run) return;
       paper = found;
-      results = new Map(paper.citing.map((w) => [w.id, { state: "waiting" }]));
+      works = paper.citing;
+      works.forEach((w) => { w.page = 1; });
+      pagesLoaded = 1;
+      shown = 0;
       filter = "all";
+      results = new Map();
+      $("works").innerHTML = "";
       $("sample").hidden = true;
       $("results").hidden = false;
       document.body.classList.add("reading");
       $("paper-title").textContent = tidy(paper.title);
-      $("cap").textContent = paper.max_citing;
-      $("works").innerHTML = paper.citing.map((w) => `<section class="work" id="w-${w.id}"></section>`).join("");
-      paper.citing.forEach(renderWork);
-      renderSummary();
-      const id = paper.arxiv_id || paper.id;
-      history.replaceState(null, "", "?paper=" + encodeURIComponent(id));
+      history.replaceState(null, "", "?paper=" + encodeURIComponent(paper.arxiv_id || paper.id));
       document.title = tidy(paper.title) + " | Semantic citations";
 
-      go.textContent = "Reading…";
-      const queue = paper.citing.slice();
-      const worker = async () => { for (let w; mine === run && (w = queue.shift()); ) await readWork(w, mine); };
-      await Promise.all([worker(), worker(), worker()]);
+      // Everything any visitor has already read for this paper arrives in bulk.
+      for (let offset = 0; offset !== null; ) {
+        const stored = await api(`/api/results?target=${paper.id}&offset=${offset}`);
+        if (mine !== run) return;
+        for (const [id, data] of Object.entries(stored.results)) results.set(id, { state: "done", data });
+        offset = stored.next;
+      }
+      // List far enough to show all of it.
+      const listedIds = () => new Set(works.map((w) => w.id));
+      for (let have = listedIds(); [...results.keys()].some((id) => !have.has(id)) && (await loadNextPage(mine)); have = listedIds()) { /* keep loading */ }
+      if (mine !== run) return;
+      let last = -1;
+      works.forEach((w, i) => { if (results.has(w.id)) last = i; });
+      show(last + 1);
+      renderSummary();
+
+      const already = works.filter((w) => results.has(w.id)).length;
+      await readMore(Math.max(0, FIRST_BATCH - already), mine);
     } catch (err) {
       if (mine !== run) return;
       $("problem").textContent = err.message;
       $("problem").hidden = false;
     } finally {
-      if (mine === run) { go.disabled = false; go.textContent = "Read the citations"; }
+      if (mine === run && !reading) { go.disabled = false; go.textContent = "Read the citations"; }
     }
   }
 
@@ -385,6 +507,12 @@
     filter = b.dataset.filter;
     renderSummary();
   });
+  $("more").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-more]");
+    if (!b) return;
+    if (b.dataset.more === "stop") { stop = true; b.disabled = true; b.textContent = "Stopping after this paper…"; return; }
+    readMore(b.dataset.more === "all" ? Infinity : Number(b.dataset.more), run);
+  });
   $("strip").addEventListener("click", (e) => {
     const b = e.target.closest("[data-go]");
     const el = b && $(b.dataset.go);
@@ -395,10 +523,10 @@
     void el.offsetWidth;
     el.classList.add("flash");
   });
-  $("works").addEventListener("click", (e) => {
+  $("works").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-retry]");
-    const w = b && paper.citing.find((x) => x.id === b.dataset.retry);
-    if (w) readWork(w, run);
+    const w = b && works.find((x) => x.id === b.dataset.retry);
+    if (w && !reading) { await readWork(w, run); renderSummary(); }
   });
 
   const preset = new URLSearchParams(location.search).get("paper");

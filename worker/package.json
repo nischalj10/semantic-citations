@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/tei.test.mjs",
+    "test": "node --test test/arxiv.test.mjs",
     "parity": "node test/parity.mjs",
     "build": "esbuild src/index.js --bundle --format=esm --loader:.html=text --outfile=dist/worker.js",
     "dev": "wrangler dev",
