@@ -78,7 +78,7 @@ def collect(identifier: str, max_fulltext_usd: float) -> tuple[Path, dict, list[
     return out, cited, contexts
 
 
-def classify(out: Path, cited: dict, contexts: list[dict], rotations: int) -> list[dict]:
+def classify(out: Path, cited: dict, contexts: list[dict], rotations: int, review_below: float) -> list[dict]:
     """Step 4: ask the decision model about every context."""
     predictions, tokens = [], 0
     for ctx in contexts:
@@ -86,30 +86,37 @@ def classify(out: Path, cited: dict, contexts: list[dict], rotations: int) -> li
         tokens += result.pop("input_tokens")
         evidence = result["own_evidence"]["probability"] >= 0.5
         result["cito"] = cito_property(result["function"]["label"], result["stance"]["label"], evidence)
+        result["needs_review"] = min(result["function"]["confidence"], result["stance"]["confidence"]) < review_below
         predictions.append({"id": ctx["id"], **result})
         print(
             f"  {ctx['id']:<15} function={result['function']['label']:<10} ({result['function']['confidence']:.2f})"
             f"  stance={result['stance']['label']:<9} ({result['stance']['confidence']:.2f})"
             f"  own_evidence={result['own_evidence']['probability']:.2f}"
+            f"{'  REVIEW' if result['needs_review'] else ''}"
         )
     write_jsonl(out / "predictions.jsonl", predictions)
-    print(f"{len(predictions)} contexts, {tokens:,} input tokens (about ${tokens / 1e6 * 0.10:.4f} at $0.10 per 1M)")
+    flagged = sum(p["needs_review"] for p in predictions)
+    print(f"{len(predictions)} contexts, {flagged} flagged for review (confidence below {review_below})")
+    print(f"{tokens:,} input tokens (about ${tokens / 1e6 * 0.10:.4f} at $0.10 per 1M)")
     return predictions
 
 
 def write_turtle(out: Path, cited: dict, contexts: list[dict], predictions: list[dict], citing: list[dict]) -> None:
     """Step 5: one CiTO triple per distinct relation between a citing paper and the cited one."""
     iri = lambda w: f"<{w['doi']}>" if w.get("doi") else f"<https://openalex.org/{w['openalex_id']}>"
-    by_work: dict[str, set[str]] = {}
+    # property -> True if every context behind it was flagged for review
+    by_work: dict[str, dict[str, bool]] = {}
     for ctx, pred in zip(contexts, predictions):
-        by_work.setdefault(ctx["citing_work"], set()).add(pred["cito"])
+        props = by_work.setdefault(ctx["citing_work"], {})
+        props[pred["cito"]] = props.get(pred["cito"], True) and pred["needs_review"]
     works = {w["openalex_id"]: w for w in citing}
     lines = ["@prefix cito: <http://purl.org/spar/cito/> .", ""]
     for wid, props in by_work.items():
         title = re.sub(r"\s+", " ", works[wid]["title"])
         lines.append(f"# {title}")
         for prop in sorted(props):
-            lines.append(f"{iri(works[wid])} cito:{prop} {iri(cited)} .")
+            note = "  # low confidence, review before use" if props[prop] else ""
+            lines.append(f"{iri(works[wid])} cito:{prop} {iri(cited)} .{note}")
         lines.append("")
     (out / "citations.ttl").write_text("\n".join(lines))
 
@@ -122,6 +129,7 @@ def main() -> None:
     run.add_argument("paper", help="arXiv URL or ID, DOI, or OpenAlex work ID")
     run.add_argument("--rotations", type=int, default=4, help="option orders to average over (default 4)")
     run.add_argument("--max-fulltext-usd", type=float, default=0.50, help="OpenAlex full-text spend allowed for this run")
+    run.add_argument("--review-below", type=float, default=0.90, help="flag a context when either choice is less confident than this")
     run.add_argument("--no-classify", action="store_true", help="stop after extracting contexts (e.g. to hand-label first)")
 
     ev = sub.add_parser("eval", help="compare predictions with hand labels in gold.jsonl")
@@ -133,7 +141,7 @@ def main() -> None:
         print(f"{len(contexts)} citation contexts -> {out / 'contexts.jsonl'}")
         if args.no_classify:
             return
-        predictions = classify(out, cited, contexts, args.rotations)
+        predictions = classify(out, cited, contexts, args.rotations, args.review_below)
         write_turtle(out, cited, contexts, predictions, json.loads((out / "citing_works.json").read_text()))
         print(f"Wrote {out / 'predictions.jsonl'} and {out / 'citations.ttl'}")
     else:

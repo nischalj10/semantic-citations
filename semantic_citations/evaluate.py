@@ -70,6 +70,22 @@ def write_report(out: Path, contexts: list[dict], predictions: list[dict], gold:
         lines.append(f"- `{q}`: mean confidence {mean(right)} when it agrees ({len(right)}), {mean(wrong)} when it disagrees ({len(wrong)}).")
     lines.append("")
 
+    # --- review flag --------------------------------------------------------
+    flagged = [i for i in ids if pred[i].get("needs_review")]
+    kept = [i for i in ids if not pred[i].get("needs_review")]
+    both_right = lambda i: all(pred[i][q]["label"] == gold_by_id[i][q] for q in CHOICE_QUESTIONS)
+    wrong = [i for i in ids if not both_right(i)]
+    lines += [
+        "## Review flag",
+        "",
+        "A context is flagged when either choice is below the review threshold (default 0.90).",
+        "",
+        f"- Not flagged: {len(kept)} contexts, of which {_pct(sum(both_right(i) for i in kept), len(kept))} match the hand label on both questions.",
+        f"- Flagged: {len(flagged)} contexts, of which {_pct(sum(both_right(i) for i in flagged), len(flagged))} match on both.",
+        f"- Contexts with any disagreement: {len(wrong)}, of which {_pct(sum(1 for i in wrong if i in flagged), len(wrong))} were flagged.",
+        "",
+    ]
+
     # --- confusion ----------------------------------------------------------
     for q in CHOICE_QUESTIONS:
         labels = sorted({gold_by_id[i][q] for i in ids} | {pred[i][q]["label"] for i in ids})
