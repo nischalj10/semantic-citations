@@ -4,6 +4,8 @@ A citation count says a paper was mentioned. It does not say whether the citing 
 
 Background: [Why is there no semantic ontology of sentiment in academic citations?](https://shkspr.mobi/blog/2022/07/why-is-there-no-semantic-ontology-of-sentiment-in-academic-citations/)
 
+**Try it: https://semantic-citations.nischalj10.workers.dev** Paste an arXiv link and read every citation with its labels.
+
 ## How it works
 
 1. **OpenAlex** resolves the paper and lists every work that cites it.
@@ -33,6 +35,39 @@ python -m unittest                                     # offline tests
 | `gold.jsonl`, `report.md` | hand labels and the comparison against them (after `eval`) |
 
 Cost for the example paper (10 citing works, 20 contexts): $0.10 of OpenAlex's free $1/day for full text, paid once and then cached, and about $0.01 of OpenAI usage.
+
+## Web app
+
+`worker/` is the same pipeline as a Cloudflare Worker with a single page in front of it.
+
+- `GET /api/paper?id=<arxiv link>` resolves the paper and lists the works citing it.
+- `GET /api/citations?target=<id>&work=<id>` reads one citing work and labels each citation in it.
+
+The browser asks for the paper, then for each citing work in turn, so the page fills in as papers are read and no single request makes more than a few dozen outbound calls. Results are cached in Workers KV, so a paper is only paid for once.
+
+The prompt is not duplicated: `python -m semantic_citations export-prompt` writes `worker/src/prompt.json` from `taxonomy.py`. The context extractor is a port (`worker/src/tei.js`), and `node worker/test/parity.mjs` checks it against the Python output. On the test paper the live site returns the same 20 contexts and the same labels and confidences as the Python run.
+
+Because the site is public and spends real API budget, it has limits, set in `worker/wrangler.jsonc`:
+
+| Setting | Default | Why |
+|---|---|---|
+| `MAX_CITING` | 30 | citing works read per paper, most-cited first |
+| `MAX_CONTEXTS_PER_WORK` | 8 | keeps one request under the Workers free plan's 50 outbound calls |
+| `DAILY_FULLTEXT_CAP` | 80 | new full texts per day; each costs $0.01 of OpenAlex's free $1/day |
+
+The citations endpoint takes IDs, never text, and only reads works that OpenAlex lists as citing the target, so it cannot be used as an open proxy to the OpenAI key.
+
+```bash
+cd worker
+npm install
+npm test                       # offline unit tests
+npx wrangler login
+npx wrangler secret put OPENAI_API_KEY      # first deploy only
+npx wrangler secret put OPENALEX_API_KEY    # first deploy only
+npx wrangler deploy
+
+npm run build && node test/local.mjs        # or run it in Node, no Cloudflare login needed
+```
 
 ## Categories
 

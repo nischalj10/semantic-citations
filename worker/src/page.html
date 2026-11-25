@@ -1,0 +1,409 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Semantic citations: read every citation of a paper</title>
+<meta name="description" content="Paste an arXiv link. Every paper that cites it is read, and each citation is labelled by why it was cited and what the authors made of it.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23ffe566'/%3E%3Ctext x='16' y='22' font-family='Georgia,serif' font-size='16' font-weight='700' text-anchor='middle' fill='%2316213a'%3E[1]%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;1,7..72,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --desk: #eef1f5;
+    --page: #ffffff;
+    --ink: #16213a;
+    --pencil: #5d6a80;
+    --rule: #d6dce6;
+    --marker: #ffe566;
+    --supports: #1b7a52;
+    --critiques: #c2362b;
+    --mixed: #7748b3;
+    --neutral: #8590a3;
+    --serif: "Literata", "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    --sans: "Instrument Sans", "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body { margin: 0; background: var(--desk); color: var(--ink); font-family: var(--sans); font-size: 16px; line-height: 1.5; }
+  a { color: inherit; text-decoration-color: var(--neutral); text-underline-offset: 3px; }
+  a:hover { text-decoration-color: var(--ink); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; border-radius: 2px; }
+  mark { background: var(--marker); color: inherit; padding: 0.08em 0.18em; margin: 0 -0.06em; border-radius: 2px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+
+  .sheet { max-width: 1040px; margin: 0 auto; padding: 28px 24px 72px; }
+  .wordmark { font-weight: 600; font-size: 15px; letter-spacing: 0.01em; margin: 0 0 56px; }
+  .wordmark mark { font-family: var(--serif); font-weight: 600; margin-right: 6px; }
+
+  h1 { font-family: var(--serif); font-weight: 600; font-size: clamp(32px, 5.2vw, 52px); line-height: 1.08; letter-spacing: -0.015em; margin: 0 0 18px; max-width: 16ch; }
+  .lede { font-size: 18px; color: var(--pencil); max-width: 58ch; margin: 0 0 30px; }
+
+  .ask { display: flex; gap: 10px; max-width: 720px; }
+  .ask input { flex: 1; min-width: 0; font: inherit; font-size: 17px; color: var(--ink); background: var(--page); border: 1.5px solid var(--ink); border-radius: 4px; padding: 13px 14px; }
+  .ask input::placeholder { color: var(--neutral); }
+  .ask button { background: var(--ink); color: #fff; border: 1.5px solid var(--ink); border-radius: 4px; padding: 13px 20px; font-weight: 600; white-space: nowrap; }
+  .ask button:disabled { opacity: 0.55; cursor: progress; }
+  .try { margin: 12px 0 0; font-size: 15px; color: var(--pencil); }
+  .try button { background: none; border: 0; padding: 0; text-decoration: underline; text-decoration-color: var(--neutral); text-underline-offset: 3px; }
+  .problem { margin: 16px 0 0; max-width: 720px; padding: 12px 14px; background: var(--page); border-left: 4px solid var(--critiques); font-size: 15px; }
+
+  /* One citation: the passage on the page, the verdict in the margin. */
+  .citation { display: grid; grid-template-columns: minmax(0, 1fr) 230px; gap: 36px; padding: 22px 0; border-top: 1px solid var(--rule); scroll-margin-top: 20px; }
+  .citation[hidden] { display: none; }
+  .passage { font-family: var(--serif); font-size: 17px; line-height: 1.62; max-width: 66ch; margin: 0; }
+  .passage .around { color: var(--pencil); }
+  .where { font-family: var(--sans); font-size: 13.5px; color: var(--pencil); margin: 0 0 6px; }
+  .verdict { border-left: 3px solid var(--stance, var(--neutral)); padding: 1px 0 1px 14px; font-size: 14.5px; align-self: start; }
+  .verdict p { margin: 0 0 4px; }
+  .verdict .stance { font-family: var(--serif); font-weight: 600; font-size: 20px; line-height: 1.2; color: var(--stance, var(--ink)); margin-bottom: 6px; }
+  .verdict .quiet { color: var(--pencil); }
+  .verdict .check { margin-top: 8px; font-weight: 500; }
+  .verdict details { margin-top: 8px; color: var(--pencil); font-size: 13.5px; }
+  .verdict summary { cursor: pointer; }
+  .verdict dl { margin: 6px 0 0; display: grid; grid-template-columns: 1fr auto; gap: 1px 12px; }
+  .verdict dt { grid-column: 1 / -1; font-weight: 600; color: var(--ink); margin-top: 6px; }
+  .verdict dd { margin: 0; display: contents; }
+  .verdict dd span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+  .citation.flash .passage { animation: flash 1.1s ease-out; }
+  @keyframes flash { from { background: rgba(255, 229, 102, 0.55); } to { background: transparent; } }
+  [data-stance="supports"] { --stance: var(--supports); }
+  [data-stance="critiques"] { --stance: var(--critiques); }
+  [data-stance="mixed"] { --stance: var(--mixed); }
+  [data-stance="neutral"] { --stance: var(--neutral); }
+
+  /* Once a paper is on the page, the introduction steps back. */
+  .reading h1 { font-size: 26px; letter-spacing: 0; max-width: none; margin-bottom: 14px; }
+  .reading .lede, .reading .try { display: none; }
+  .reading .wordmark { margin-bottom: 28px; }
+  .reading #results { margin-top: 32px; }
+
+  .sample { margin-top: 64px; max-width: 900px; }
+  .sample .citation { border-top: 0; background: var(--page); padding: 26px 28px; }
+  .sample figcaption { font-size: 14px; color: var(--pencil); margin-top: 10px; }
+  figure { margin: 0; }
+
+  #results { margin-top: 60px; background: var(--page); padding: 34px 36px 12px; }
+  #results[hidden], .sample[hidden], .problem[hidden] { display: none; }
+  .paper-title { font-family: var(--serif); font-weight: 600; font-size: clamp(22px, 3vw, 28px); line-height: 1.22; margin: 0 0 8px; max-width: 44ch; }
+  .status { color: var(--pencil); margin: 0 0 22px; max-width: 70ch; }
+
+  /* The strip: one tick per citation, grouped by citing paper. */
+  .strip { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0 0 14px; min-height: 34px; }
+  .strip .group { display: flex; gap: 3px; }
+  .tick { width: 11px; height: 34px; padding: 0; border: 2px solid var(--stance, var(--rule)); background: var(--stance, var(--rule)); border-radius: 2px; }
+  .tick.unsure { background: transparent; }
+  .tick.waiting { border-color: var(--rule); background: var(--rule); animation: wait 1.2s ease-in-out infinite alternate; cursor: default; }
+  .tick.empty { border-color: var(--rule); background: transparent; border-style: dashed; cursor: default; }
+  .tick.off { opacity: 0.16; }
+  @keyframes wait { from { opacity: 0.35; } to { opacity: 1; } }
+  .filters { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 6px; }
+  .filters button { background: none; border: 1.5px solid var(--rule); border-radius: 999px; padding: 5px 13px; font-size: 14.5px; display: inline-flex; align-items: center; gap: 7px; }
+  .filters button[aria-pressed="true"] { border-color: var(--ink); background: var(--ink); color: #fff; }
+  .filters .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--stance, var(--neutral)); border: 2px solid var(--stance, var(--neutral)); }
+  .filters .dot.unsure { background: transparent; border-color: currentColor; }
+  .key { font-size: 13.5px; color: var(--pencil); margin: 8px 0 26px; }
+
+  .work { padding: 18px 0 6px; }
+  .work[hidden] { display: none; }
+  .work h3 { font-family: var(--sans); font-weight: 600; font-size: 17px; line-height: 1.35; margin: 0; max-width: 70ch; }
+  .work .meta { font-size: 14px; color: var(--pencil); margin: 3px 0 12px; }
+  .work .note { font-size: 15px; color: var(--pencil); margin: 0 0 14px; padding-top: 12px; border-top: 1px solid var(--rule); }
+  .work .note button { background: none; border: 0; padding: 0; text-decoration: underline; color: var(--ink); }
+
+  footer { margin-top: 56px; font-size: 14.5px; color: var(--pencil); max-width: 72ch; }
+  footer p { margin: 0 0 10px; }
+
+  @media (max-width: 760px) {
+    .sheet { padding: 20px 16px 56px; }
+    .wordmark { margin-bottom: 36px; }
+    .ask { flex-direction: column; }
+    .citation { grid-template-columns: 1fr; gap: 14px; }
+    #results { padding: 24px 18px 8px; margin-left: -16px; margin-right: -16px; }
+    .sample .citation { padding: 20px 18px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .tick.waiting, .citation.flash .passage { animation: none; }
+    html { scroll-behavior: auto; }
+  }
+</style>
+</head>
+<body>
+<div class="sheet">
+  <p class="wordmark"><mark>[1]</mark>Semantic citations</p>
+
+  <main>
+    <h1>Read every citation of a paper</h1>
+    <p class="lede">Paste an arXiv link. Each paper that cites it is opened, the sentences that mention it are pulled out, and a model labels why it was cited and what the authors made of it.</p>
+
+    <form class="ask" id="ask">
+      <input id="link" name="link" type="text" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://arxiv.org/abs/2512.00601" aria-label="arXiv link or ID" required>
+      <button id="go" type="submit">Read the citations</button>
+    </form>
+    <p class="try">New here? <button type="button" id="try">Try it with Clinical-R1, arXiv 2512.00601</button></p>
+    <p class="problem" id="problem" role="alert" hidden></p>
+
+    <figure class="sample" id="sample">
+      <div class="citation" data-stance="critiques">
+        <div>
+          <p class="where">From the introduction of a citing paper</p>
+          <p class="passage"><span class="around">Reinforcement learning has become the usual way to teach a model to reason.</span> Most reward schemes score only the final answer <mark>[12]</mark>, which leaves the reasoning that produced it unchecked. <span class="around">We propose a reward that inspects each step.</span></p>
+        </div>
+        <div class="verdict">
+          <p class="stance">Critical</p>
+          <p>Cited as motivation</p>
+          <p class="quiet">Model confidence 94%</p>
+        </div>
+      </div>
+      <figcaption>An invented example. The highlighted marker is the citation being judged; the verdict sits in the margin.</figcaption>
+    </figure>
+
+    <section id="results" aria-live="polite" hidden>
+      <h2 class="paper-title" id="paper-title"></h2>
+      <p class="status" id="status"></p>
+      <div class="strip" id="strip" aria-label="One mark per citation, grouped by citing paper"></div>
+      <div class="filters" id="filters" role="group" aria-label="Show citations by attitude"></div>
+      <p class="key" id="key">Each bar is one citation, grouped by the paper it appears in. A hollow bar means the model was less than 90% confident.</p>
+      <div id="works"></div>
+    </section>
+  </main>
+
+  <footer>
+    <p>Citing papers and their full text come from OpenAlex. Labels come from OpenAI's Decisions API, which returns a probability for each predefined answer. The site reads up to <span id="cap">30</span> citing papers per paper, most-cited first, and can only read those with open full text.</p>
+    <p>The labels are a model's reading, and it leans cautious. In a hand-checked test of 20 citations it matched a human on 14 for the reason and 16 for the attitude, and every miss was a retreat to “background” or “neutral”. Answers above 90% confidence matched every time.</p>
+    <p><a href="https://github.com/nischalj10/semantic-citations">Code, prompt and test results on GitHub</a></p>
+  </footer>
+</div>
+
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
+  const marked = (s) => esc(s).replaceAll("&lt;TARGET&gt;", "<mark>").replaceAll("&lt;/TARGET&gt;", "</mark>");
+  const pct = (x) => Math.round(x * 100) + "%";
+  const tidy = (s) => String(s ?? "").replace(/\$([^$\s]{1,40})\$/g, "$1"); // "$τ$-bench" -> "τ-bench"
+  const arxivMonth = (id) => {
+    const m = /^(\d{2})(\d{2})\./.exec(id || "");
+    return m ? new Date(Date.UTC(2000 + Number(m[1]), Number(m[2]) - 1, 1)).toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" }) : "";
+  };
+  const plural = (n, one, many) => n + " " + (n === 1 ? one : many);
+
+  const STANCE = { supports: "Supportive", critiques: "Critical", mixed: "Mixed", neutral: "Neutral" };
+  const FUNCTION = { background: "Cited as background", builds_on: "Builds on it", compares: "Compares against it", motivates: "Cited as motivation" };
+  const OPTION = { background: "Background", builds_on: "Builds on it", compares: "Compares", motivates: "Motivation", supports: "Supportive", critiques: "Critical", mixed: "Mixed", neutral: "Neutral" };
+  const EMPTY = {
+    no_fulltext: "No open full text, so its citations could not be read.",
+    not_in_references: "The paper was not found in this work's reference list.",
+    no_intext_citation: "Listed in the references, but no sentence citing it was found.",
+  };
+
+  let run = 0; // increments on every lookup so stale responses are ignored
+  let paper = null;
+  let results = new Map(); // work id -> { state: "waiting" | "done" | "failed", data, error }
+  let filter = "all";
+
+  async function api(path, tries = 3) {
+    const res = await fetch(path, { headers: { Accept: "application/json" } });
+    let body = null;
+    try { body = await res.json(); } catch { /* not JSON */ }
+    if (res.status === 409 && tries > 1) {
+      await new Promise((r) => setTimeout(r, 1200));
+      return api(path, tries - 1);
+    }
+    if (!res.ok) {
+      const err = new Error((body && body.error) || "The site could not be reached. Check your connection and try again.");
+      err.retryAfter = body && body.retry_after;
+      throw err;
+    }
+    return body;
+  }
+
+  const when = (iso) => {
+    if (!iso) return "";
+    const d = new Date(iso + "T00:00:00Z");
+    return isNaN(d) ? "" : d.toLocaleDateString("en", { month: "long", year: "numeric", timeZone: "UTC" });
+  };
+
+  const citations = () => {
+    const out = [];
+    for (const w of paper.citing) {
+      const r = results.get(w.id);
+      if (r && r.state === "done") r.data.contexts.forEach((c, i) => out.push({ work: w, c, id: `c-${w.id}-${i}` }));
+    }
+    return out;
+  };
+  const visible = (c) => filter === "all" || (filter === "unsure" ? c.needs_review : c.stance.label === filter);
+
+  function citationHtml(c, id) {
+    const sure = Math.min(c.function.confidence, c.stance.confidence);
+    const rows = (q) => Object.entries(q.probabilities).sort((a, b) => b[1] - a[1]).map(([k, v]) => `<dd><span>${esc(OPTION[k] || k)}</span><span>${pct(v)}</span></dd>`).join("");
+    const where = c.match === "name" ? "Mentioned by name" : c.section ? `From “${esc(c.section)}”` : "";
+    return `<article class="citation" id="${id}" tabindex="-1" data-stance="${esc(c.stance.label)}">
+      <div>
+        ${where ? `<p class="where">${where}</p>` : ""}
+        <p class="passage">${c.before ? `<span class="around">${esc(c.before)}</span> ` : ""}${marked(c.sentence)}${c.after ? ` <span class="around">${esc(c.after)}</span>` : ""}</p>
+      </div>
+      <div class="verdict">
+        <p class="stance">${esc(STANCE[c.stance.label] || c.stance.label)}</p>
+        <p>${esc(FUNCTION[c.function.label] || c.function.label)}</p>
+        ${c.own_evidence.probability >= 0.5 ? "<p>Reports its own results for it</p>" : ""}
+        ${c.co_cited > 0 ? `<p class="quiet">Cited alongside ${plural(c.co_cited, "other paper", "other papers")}</p>` : ""}
+        <p class="quiet">Model confidence ${pct(sure)}</p>
+        ${c.needs_review ? '<p class="check">Low confidence. Read this one yourself.</p>' : ""}
+        <details><summary>All probabilities</summary><dl>
+          <dt>Attitude</dt>${rows(c.stance)}
+          <dt>Reason for citing</dt>${rows(c.function)}
+          <dt>Own results</dt><dd><span>Reports a result for it</span><span>${pct(c.own_evidence.probability)}</span></dd>
+        </dl>${c.function.order_sensitive || c.stance.order_sensitive ? "<p>The top answer changed when the options were reordered.</p>" : ""}</details>
+      </div>
+    </article>`;
+  }
+
+  function renderWork(w) {
+    const el = $("w-" + w.id);
+    const r = results.get(w.id);
+    const title = w.doi ? `<a href="${esc(w.doi)}" rel="noopener">${esc(tidy(w.title))}</a>` : esc(tidy(w.title));
+    const meta = [w.venue, when(w.published)].filter(Boolean).map(esc).join(", ");
+    let body;
+    if (!r || r.state === "waiting") body = `<p class="note">${esc((r && r.note) || "Reading…")}</p>`;
+    else if (r.state === "failed") body = `<p class="note">${esc(r.error)} <button type="button" data-retry="${esc(w.id)}">Try this paper again</button></p>`;
+    else if (!r.data.contexts.length) body = `<p class="note">${esc(EMPTY[r.data.status] || "No citations were found.")}</p>`;
+    else {
+      body = r.data.contexts.map((c, i) => citationHtml(c, `c-${w.id}-${i}`)).join("");
+      if (r.data.not_shown) body += `<p class="note">${plural(r.data.not_shown, "more citation", "more citations")} in this paper not shown.</p>`;
+    }
+    el.innerHTML = `<h3>${title}</h3>${meta ? `<p class="meta">${meta}</p>` : ""}${body}`;
+  }
+
+  function renderSummary() {
+    const all = citations();
+    const done = paper.citing.filter((w) => (results.get(w.id) || {}).state !== "waiting").length;
+    const reading = done < paper.citing.length;
+
+    let status = arxivMonth(paper.arxiv_id) ? `On arXiv since ${arxivMonth(paper.arxiv_id)}. ` : paper.year ? `Published ${paper.year}. ` : "";
+    if (!paper.total_citing) status += "OpenAlex doesn't list any papers citing this one yet.";
+    else {
+      status += paper.total_citing > paper.shown
+        ? `Cited by ${paper.total_citing.toLocaleString("en")} papers in OpenAlex; reading the ${paper.shown} most cited. `
+        : `Cited by ${plural(paper.total_citing, "paper", "papers")} in OpenAlex. `;
+      status += reading ? `Read ${done} of ${paper.citing.length} so far.` : `Found ${plural(all.length, "citation", "citations")} in them.`;
+    }
+    $("status").textContent = status;
+
+    $("strip").innerHTML = paper.citing.map((w) => {
+      const r = results.get(w.id);
+      let ticks;
+      if (!r || r.state === "waiting") ticks = '<span class="tick waiting"></span>';
+      else if (r.state === "failed" || !r.data.contexts.length) ticks = '<span class="tick empty"></span>';
+      else ticks = r.data.contexts.map((c, i) => `<button type="button" class="tick${c.needs_review ? " unsure" : ""}${visible(c) ? "" : " off"}" data-stance="${esc(c.stance.label)}" data-go="c-${w.id}-${i}" aria-label="${esc(STANCE[c.stance.label])} citation in ${esc(tidy(w.title))}"></button>`).join("");
+      return `<span class="group" title="${esc(tidy(w.title))}">${ticks}</span>`;
+    }).join("");
+
+    const count = (f) => all.filter(({ c }) => (f === "unsure" ? c.needs_review : c.stance.label === f)).length;
+    const buttons = [["all", `All ${all.length}`, ""]];
+    for (const s of ["supports", "critiques", "mixed", "neutral"]) buttons.push([s, `${STANCE[s]} ${count(s)}`, `<span class="dot" data-stance="${s}"></span>`]);
+    buttons.push(["unsure", `Low confidence ${count("unsure")}`, '<span class="dot unsure"></span>']);
+    $("filters").innerHTML = all.length ? buttons.map(([f, label, dot]) => `<button type="button" data-filter="${f}" aria-pressed="${filter === f}">${dot}${label}</button>`).join("") : "";
+    $("key").hidden = !all.length;
+
+    for (const { c, id } of all) { const el = $(id); if (el) el.hidden = !visible(c); }
+    for (const w of paper.citing) {
+      const r = results.get(w.id);
+      const has = r && r.state === "done" && r.data.contexts.some(visible);
+      $("w-" + w.id).hidden = filter !== "all" && !has;
+    }
+  }
+
+  async function readWork(w, mine) {
+    for (let attempt = 0; mine === run; attempt++) {
+      try {
+        const data = await api(`/api/citations?target=${paper.id}&work=${w.id}`);
+        if (mine !== run) return;
+        results.set(w.id, { state: "done", data });
+        break;
+      } catch (err) {
+        if (mine !== run) return;
+        if (err.retryAfter && attempt < 30) {
+          // A short-term limit upstream: wait as long as it asks, then try again.
+          results.set(w.id, { state: "waiting", note: `${err.message} Trying again in ${err.retryAfter} seconds.` });
+          renderWork(w);
+          await new Promise((r) => setTimeout(r, err.retryAfter * 1000));
+          continue;
+        }
+        results.set(w.id, { state: "failed", error: err.message });
+        break;
+      }
+    }
+    if (mine !== run) return;
+    renderWork(w);
+    renderSummary();
+  }
+
+  async function lookup(link) {
+    const mine = ++run;
+    const go = $("go");
+    $("problem").hidden = true;
+    go.disabled = true;
+    go.textContent = "Looking it up…";
+    try {
+      const found = await api("/api/paper?id=" + encodeURIComponent(link));
+      if (mine !== run) return;
+      paper = found;
+      results = new Map(paper.citing.map((w) => [w.id, { state: "waiting" }]));
+      filter = "all";
+      $("sample").hidden = true;
+      $("results").hidden = false;
+      document.body.classList.add("reading");
+      $("paper-title").textContent = tidy(paper.title);
+      $("cap").textContent = paper.max_citing;
+      $("works").innerHTML = paper.citing.map((w) => `<section class="work" id="w-${w.id}"></section>`).join("");
+      paper.citing.forEach(renderWork);
+      renderSummary();
+      const id = paper.arxiv_id || paper.id;
+      history.replaceState(null, "", "?paper=" + encodeURIComponent(id));
+      document.title = tidy(paper.title) + " | Semantic citations";
+
+      go.textContent = "Reading…";
+      const queue = paper.citing.slice();
+      const worker = async () => { for (let w; mine === run && (w = queue.shift()); ) await readWork(w, mine); };
+      await Promise.all([worker(), worker(), worker()]);
+    } catch (err) {
+      if (mine !== run) return;
+      $("problem").textContent = err.message;
+      $("problem").hidden = false;
+    } finally {
+      if (mine === run) { go.disabled = false; go.textContent = "Read the citations"; }
+    }
+  }
+
+  $("ask").addEventListener("submit", (e) => { e.preventDefault(); const v = $("link").value.trim(); if (v) lookup(v); });
+  $("try").addEventListener("click", () => { $("link").value = "https://arxiv.org/abs/2512.00601"; lookup($("link").value); });
+  $("filters").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-filter]");
+    if (!b) return;
+    filter = b.dataset.filter;
+    renderSummary();
+  });
+  $("strip").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-go]");
+    const el = b && $(b.dataset.go);
+    if (!el) return;
+    el.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "center" });
+    el.focus({ preventScroll: true });
+    el.classList.remove("flash");
+    void el.offsetWidth;
+    el.classList.add("flash");
+  });
+  $("works").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-retry]");
+    const w = b && paper.citing.find((x) => x.id === b.dataset.retry);
+    if (w) readWork(w, run);
+  });
+
+  const preset = new URLSearchParams(location.search).get("paper");
+  if (preset) { $("link").value = preset; lookup(preset); }
+})();
+</script>
+</body>
+</html>

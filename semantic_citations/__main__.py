@@ -2,6 +2,7 @@
 
     python -m semantic_citations run  https://arxiv.org/abs/2512.00601
     python -m semantic_citations eval arxiv-2512.00601
+    python -m semantic_citations export-prompt     # refresh worker/src/prompt.json
 """
 
 from __future__ import annotations
@@ -15,7 +16,8 @@ from . import openalex
 from .config import DATA
 from .decisions import decide
 from .evaluate import write_report
-from .taxonomy import cito_property, render_input
+from .config import ROOT
+from .taxonomy import cito_property, export, render_input
 from .tei import Target, extract_contexts
 
 
@@ -135,8 +137,15 @@ def main() -> None:
     ev = sub.add_parser("eval", help="compare predictions with hand labels in gold.jsonl")
     ev.add_argument("slug", help="folder name under data/, e.g. arxiv-2512.00601")
 
+    sub.add_parser("export-prompt", help="write the prompt to worker/src/prompt.json for the web app")
+
     args = parser.parse_args()
-    if args.command == "run":
+    if args.command == "export-prompt":
+        path = ROOT / "worker" / "src" / "prompt.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(export(), indent=2) + "\n")
+        print(f"Wrote {path}")
+    elif args.command == "run":
         out, cited, contexts = collect(args.paper, args.max_fulltext_usd)
         print(f"{len(contexts)} citation contexts -> {out / 'contexts.jsonl'}")
         if args.no_classify:

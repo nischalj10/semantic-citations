@@ -1,0 +1,64 @@
+{
+  "function": {
+    "name": "function",
+    "instructions": "You are labelling a single citation. The PASSAGE is taken from the CITING PAPER. The place where it cites the CITED PAPER is wrapped in <TARGET>...</TARGET>. Judge only what the citing authors do with the CITED PAPER at this spot. Use the sentence marked >>> first, and the sentences around it only to resolve ambiguity. Other works cited in the same bracket are not being labelled. Why is the CITED PAPER cited here?",
+    "choices": [
+      {
+        "value": "background",
+        "description": "Mentioned as context: related work, an example of a trend, a description of what it did, or a source for a general claim. The citing work does not use, extend or evaluate it here. Choose this when nothing more specific applies."
+      },
+      {
+        "value": "builds_on",
+        "description": "The citing work adopts, adapts or extends the cited paper's method, model, data, metric or idea as part of its own approach."
+      },
+      {
+        "value": "compares",
+        "description": "The cited paper is a baseline or an explicit point of comparison: its results, numbers or design are set against the citing work's, whether to show a difference or a similarity. Includes rows of a results table."
+      },
+      {
+        "value": "motivates",
+        "description": "The cited paper is cited to expose a gap, limitation or open problem that the citing work sets out to address."
+      }
+    ]
+  },
+  "stance": {
+    "name": "stance",
+    "instructions": "You are labelling a single citation. The PASSAGE is taken from the CITING PAPER. The place where it cites the CITED PAPER is wrapped in <TARGET>...</TARGET>. Judge only what the citing authors do with the CITED PAPER at this spot. Use the sentence marked >>> first, and the sentences around it only to resolve ambiguity. Other works cited in the same bracket are not being labelled. What attitude do the citing authors express toward the CITED PAPER itself, meaning its method, findings or quality? Three rules. (1) Beating it in an experiment is not criticism unless the authors also state a weakness. (2) If the cited paper is only the source for a claim about something else, the attitude toward the cited paper is neutral, even when that claim is negative. (3) Generic field-level phrases such as 'recent advances' or 'recent work' are not praise on their own.",
+    "choices": [
+      {
+        "value": "supports",
+        "description": "Explicitly agrees with, corroborates or praises the cited paper, for example 'consistent with', 'aligns with', 'confirms', 'as convincingly shown by'."
+      },
+      {
+        "value": "neutral",
+        "description": "Describes, lists, uses or compares against the cited paper without evaluating it. Choose this when no evaluation of the cited paper is stated."
+      },
+      {
+        "value": "critiques",
+        "description": "States a weakness, limitation, gap, failure or disagreement that applies to the cited paper, including when it is criticised as one of a group."
+      },
+      {
+        "value": "mixed",
+        "description": "Credits a strength of the cited paper and states a limitation of it in the same passage, for example 'although X improves accuracy, it requires ...'."
+      }
+    ]
+  },
+  "own_evidence": {
+    "name": "own_evidence",
+    "instructions": "You are labelling a single citation. The PASSAGE is taken from the CITING PAPER. The place where it cites the CITED PAPER is wrapped in <TARGET>...</TARGET>. Judge only what the citing authors do with the CITED PAPER at this spot. Use the sentence marked >>> first, and the sentences around it only to resolve ambiguity. Other works cited in the same bracket are not being labelled. Statement to judge: the passage reports the citing paper's own experimental result or measurement for the CITED PAPER's method or model, such as a score in a results table or a head-to-head number. Merely describing it, or naming it as a baseline without a result, does not count."
+  },
+  "cito_stance": {
+    "supports|false": "agreesWith",
+    "supports|true": "confirms",
+    "critiques|false": "critiques",
+    "critiques|true": "disputes",
+    "mixed|false": "qualifies",
+    "mixed|true": "qualifies"
+  },
+  "cito_function": {
+    "background": "obtainsBackgroundFrom",
+    "builds_on": "extends",
+    "compares": "discusses",
+    "motivates": "citesAsRelated"
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "semantic-citations",
+  "main": "src/index.js",
+  "compatibility_date": "2026-11-24",
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "traces": { "enabled": true }
+  },
+  "kv_namespaces": [
+    // Caches paper lookups and labelled citations, and holds the daily spend counter.
+    { "binding": "CACHE", "id": "cce89003c1aa4816bffcdd654000edc0" }
+  ],
+  "vars": {
+    // Citing papers read per paper, most-cited first.
+    "MAX_CITING": "30",
+    // Citations labelled per citing paper. With four option orders each, 8 keeps
+    // one request under the free plan's 50 outbound calls.
+    "MAX_CONTEXTS_PER_WORK": "8",
+    // New full texts per UTC day. Each costs $0.01 of OpenAlex's $1/day free allowance.
+    "DAILY_FULLTEXT_CAP": "80"
+  }
+  // Secrets, set once with `npx wrangler secret put <NAME>`:
+  //   OPENAI_API_KEY, OPENALEX_API_KEY
+}
