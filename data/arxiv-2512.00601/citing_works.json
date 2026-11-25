@@ -1,0 +1,82 @@
+[
+  {
+    "openalex_id": "W7224512487",
+    "title": "Trustworthy Medical LLMs via Bayesian Belief Updating",
+    "doi": "https://doi.org/10.18653/2026.emnlp-main.1678",
+    "published": "2026-01-01",
+    "status": "ok",
+    "contexts": 1
+  },
+  {
+    "openalex_id": "W7224580160",
+    "title": "Unlocking Latent Medical Reasoning in LLMs via Inference-Time Representation and Prefix Interventions",
+    "doi": "https://doi.org/10.18653/2026.findings-emnlp.727",
+    "published": "2026-01-01",
+    "status": "ok",
+    "contexts": 1
+  },
+  {
+    "openalex_id": "W7154719127",
+    "title": "RadAgent: A tool-using AI agent for stepwise interpretation of chest computed tomography",
+    "doi": "https://doi.org/10.48550/arxiv.2604.15231",
+    "published": "2026-04-16",
+    "status": "ok",
+    "contexts": 1
+  },
+  {
+    "openalex_id": "W7157260422",
+    "title": "Thinking Like a Clinician: A Cognitive AI Agent for Clinical Diagnosis via Panoramic Profiling and Adversarial Debate",
+    "doi": "https://doi.org/10.48550/arxiv.2604.23605",
+    "published": "2026-04-26",
+    "status": "ok",
+    "contexts": 1
+  },
+  {
+    "openalex_id": "W7160921908",
+    "title": "CLR-voyance: Reinforcing Open-Ended Reasoning for Inpatient Clinical Decision Support with Outcome-Aware Rubrics",
+    "doi": "https://doi.org/10.48550/arxiv.2605.09584",
+    "published": "2026-05-10",
+    "status": "ok",
+    "contexts": 3
+  },
+  {
+    "openalex_id": "W7162563163",
+    "title": "MedGuideX: Internalizing Decision Logic from Executable Guidelines into Large Language Models for Clinical Reasoning",
+    "doi": "https://doi.org/10.48550/arxiv.2605.26567",
+    "published": "2026-05-26",
+    "status": "ok",
+    "contexts": 3
+  },
+  {
+    "openalex_id": "W7163655861",
+    "title": "Auxiliary diagnosis and risk assessment of cardiovascular diseases based on BERT and Qwen: a dual large language model framework",
+    "doi": "https://doi.org/10.54254/2977-3903/2026.34223",
+    "published": "2026-06-05",
+    "status": "ok",
+    "contexts": 4
+  },
+  {
+    "openalex_id": "W7168282280",
+    "title": "The Path to Self-Evolving Clinical Systems: Scaling Medical Agents from Assistance to Autonomy",
+    "doi": "https://doi.org/10.48550/arxiv.2607.11175",
+    "published": "2026-07-13",
+    "status": "ok",
+    "contexts": 1
+  },
+  {
+    "openalex_id": "W7212714462",
+    "title": "Reinforcement Learning over Patient Trajectories for Clinical Reasoning in EHR Foundation Models",
+    "doi": "https://doi.org/10.48550/arxiv.2609.12277",
+    "published": "2026-09-10",
+    "status": "ok",
+    "contexts": 1
+  },
+  {
+    "openalex_id": "W7224777148",
+    "title": "Latent Decision Flow Rewards for Clinical Guideline Reasoning",
+    "doi": "https://doi.org/10.48550/arxiv.2610.38709",
+    "published": "2026-10-28",
+    "status": "ok",
+    "contexts": 4
+  }
+]
