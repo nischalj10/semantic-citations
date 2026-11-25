@@ -3,7 +3,9 @@
   "name": "semantic-citations",
   "main": "src/index.js",
   "compatibility_date": "2026-11-24",
-  "workers_dev": true,
+  // The public workers.dev URL is switched off for now. Set this to true to put the site back online.
+  "workers_dev": false,
+  "preview_urls": false,
   "observability": {
     "enabled": true,
     "traces": { "enabled": true }

@@ -4,7 +4,7 @@ A citation count says a paper was mentioned. It does not say whether the citing 
 
 Background: [Why is there no semantic ontology of sentiment in academic citations?](https://shkspr.mobi/blog/2022/07/why-is-there-no-semantic-ontology-of-sentiment-in-academic-citations/)
 
-**Try it: https://semantic-citations.nischalj10.workers.dev** Paste an arXiv link and read every citation with its labels.
+There is a web app too (see [Web app](#web-app)). Its hosted copy is switched off for now; `npm run build && node test/local.mjs` in `worker/` runs it locally.
 
 ## How it works
 
